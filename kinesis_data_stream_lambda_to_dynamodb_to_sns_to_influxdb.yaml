@@ -1,0 +1,103 @@
+
+Metadata:
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/metadata-section-structure.html
+# You can use the optional Metadata section to include arbitrary
+# JSON or YAML objects that provide details about the template.
+# For example, you can include template implementation details
+# about specific resources, as shown in the following snippet:
+# During a stack update, you cannot update the Metadata section by itself.
+# You can update it only when you include changes that add, modify, or delete resources.
+  License: Apache-2.0
+
+
+# Included for backward compatability
+AWSTemplateFormatVersion: '2010-09-09'
+
+
+# Template Description
+Description: 'AWS Kinesis Data Stream to SNS / Slack / DynamoDB / InfluxDB'
+
+
+#Parameters:
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html
+# Use the optional Parameters section to customize your templates.
+# Parameters enable you to input custom values to your template
+# each time you create or update a stack. Dynamic input for your templates
+
+
+#Mappings:
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/mappings-section-structure.html
+# The optional Mappings section matches a key to a corresponding
+# set of named values. For example, if you want to set values based
+# on a region, you can create a mapping that uses the region name as a
+# key and contains the values you want to specify for each specific
+# region. You use the Fn::FindInMap intrinsic function to retrieve values in a map.
+# You cannot include parameters, pseudo parameters, or intrinsic
+# functions in the Mappings section. Static variables for your template
+
+
+Resources:
+# https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html
+# The required Resources section declares the AWS resources that
+# you want to include in the stack, such as an Amazon EC2 instance
+# or an Amazon S3 bucket.
+
+  # Create Kinesis Data Stream
+  Mangagement001useast1DataStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: PDPSmokeTestMetrics
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      Tags:
+        - Key: Name
+          Value: PDPSmokeTestMetrics
+        - Key: env
+          Value: management
+
+  # Create Lambda Function
+  Mangagement001useast1Function:
+    Type: AWS::Lambda::Function
+    Description: Process Smoke Tests - Alert - On Failure - Cache to DynamoDB - Cached to InfluxDB
+    Properties:
+      FunctionName: ProcessSmokeTests
+      Runtime: python3.6
+      Role: arn:aws:iam::004121356543:role/lambda-kinesis-to-dynamodb-role
+      Handler: lambda_function.lambda_handler
+      Code:
+        S3Bucket: _S3-BUCKET-NAME_
+        S3Key: _S3-BUCKET-NAME-AND-PATH_/lambda_function.zip
+        S3ObjectVersion: _S3-OBJECT-VERSION_
+      VpcConfig:
+        SecurityGroupIds:
+          - _SECURITY-GROUPS_
+        SubnetIds:
+          - _SUBNET-IDS_
+
+  # Create Lambda Function Event Trigger
+  Mangagement001useast1FunctionEventMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn:
+        Fn::GetAtt: [ Mangagement001useast1DataStream, Arn ]
+      FunctionName: ProcessSmokeTests
+      StartingPosition: TRIM_HORIZON
+
+  # Create DynamoDB Table
+  Mangagement001useast1DynDBTable01:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: SmokeTestsTable
+      AttributeDefinitions:
+        - AttributeName: "Environment"
+          AttributeType: "S"
+        - AttributeName: "SmokeTestID"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "Environment"
+          KeyType: "HASH"
+        - AttributeName: "SmokeTestID"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
